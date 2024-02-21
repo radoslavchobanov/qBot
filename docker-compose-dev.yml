@@ -4,5 +4,6 @@ services:
     build: .
     volumes:
       - .:/usr/src/qguaratBot
-    env_file:
-      - .env
+    environment:
+      - DISCORD_TOKEN=MTIwNzQ2ODE0ODgxMTYyODU4NA.GzVyFA.-qnRruqV50DckF-DvTkM0RkPy-3x7m_8thU9_w
+      - BOT_PREFIX=!
