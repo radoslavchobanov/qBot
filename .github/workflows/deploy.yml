@@ -30,9 +30,9 @@ jobs:
         host: ${{ secrets.PI_HOST }}
         username: ${{ secrets.PI_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
-        port: 22
+        port: 2222
         source: "."
-        target: "/path/on/orange-pi"
+        target: "/Documents/qBot"
 
     - name: Deploy application
       uses: appleboy/ssh-action@master
@@ -40,8 +40,8 @@ jobs:
         host: ${{ secrets.PI_HOST }}
         username: ${{ secrets.PI_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
-        port: 22
+        port: 2222
         script: |
-          cd /path/on/orange-pi
+          cd /Documents/qBot
           docker-compose down
           docker-compose up -d --build
