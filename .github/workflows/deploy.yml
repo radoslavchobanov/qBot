@@ -30,7 +30,7 @@ jobs:
         host: ${{ secrets.PI_HOST }}
         username: ${{ secrets.PI_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
-        port: 2222
+        port: 22
         source: "."
         target: "/Documents/qBot"
 
@@ -40,7 +40,7 @@ jobs:
         host: ${{ secrets.PI_HOST }}
         username: ${{ secrets.PI_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
-        port: 2222
+        port: 22
         script: |
           cd /Documents/qBot
           docker-compose down
