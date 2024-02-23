@@ -22,5 +22,3 @@ async def on_ready():
 
 
 bot.run(config.DISCORD_TOKEN)
-
-# COMMENT

@@ -1,119 +1,194 @@
-from discord.ext import commands
+from ast import alias
 import discord
-import yt_dlp
+from discord.ext import commands
 
-# Suppress noise about console usage from errors
-yt_dlp.utils.bug_reports_message = lambda: ""
+from yt_dlp import YoutubeDL
+
+import json
 
 
-class Music(commands.Cog):
+class music_cog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.song_queue = {}
 
-        self.setup()
+        # all the music related stuff
+        self.is_playing = False
+        self.is_paused = False
+        self.current = ""
 
-    def setup(self):
-        for guild in self.bot.guilds:
-            self.song_queue[guild.id] = []
-
-    async def check_queue(self, ctx):
-        if len(self.song_queue[ctx.guild.id]) > 0:  # Ensuring the queue is not empty
-            ctx.voice_client.stop()
-            await self.play_song(ctx, self.song_queue[ctx.guild.id][0])
-            self.song_queue[ctx.guild.id].pop(0)  # Now it's safe to pop
-        else:
-            await ctx.send("The song queue is currently empty.")
-
-    async def play_song(self, ctx, song):
-        try:
-            url = song["source"]
-
-            ctx.voice_client.play(
-                discord.FFmpegPCMAudio(url, options="-vn"),
-                after=lambda e: self.bot.loop.create_task(self.check_queue(ctx)),
-            )
-            ctx.voice_client.is_playing()
-
-            await ctx.send(f'Now playing: {song["title"]}')
-        except Exception as e:
-            await ctx.send("An error occurred while processing this request.")
-            print(f"Error playing song: {e}")
-
-    @commands.command(name="join", help="Tells the bot to join the voice channel")
-    async def join(self, ctx):
-        if not ctx.message.author.voice:
-            await ctx.send("You are not connected to a voice channel.")
-            return
-
-        channel = ctx.message.author.voice.channel
-
-        if ctx.voice_client is not None:
-            return await ctx.voice_client.move_to(channel)
-
-        await channel.connect()
-
-    @commands.command(name="play", help="Plays a selected song from YouTube")
-    async def play(self, ctx, *, url):
-        if not ctx.voice_client:
-            await ctx.invoke(self.join)
-
-        # Define ydl_opts with your desired options
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "postprocessors": [
-                {
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": "192",
-                }
-            ],
-            "default_search": "ytsearch",
-            "extractaudio": True,  # Only keep the audio
-            "noplaylist": True,  # Only download a single song, not a playlist
+        # 2d array containing [song, channel]
+        self.music_queue = []
+        self.YDL_OPTIONS = {
+            "format": "m4a/bestaudio/best",
+            "noplaylist": "True",
+            "dump_single_json": "True",
+            "extract_flat": "True",
         }
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            try:
-                info = ydl.extract_info(url, download=False)
-                song = {"source": info["formats"][0]["url"], "title": info["title"]}
-                self.song_queue[ctx.guild.id].append(song)
-                await ctx.send(f'Added {song["title"]} to the queue.')
-            except Exception as e:
-                await ctx.send("An error occurred while processing this request.")
-                print(f"Error extracting video info: {e}")
+        self.FFMPEG_OPTIONS = {
+            "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
+            "options": "-vn",
+        }
 
-        if not ctx.voice_client.is_playing():
-            if self.song_queue[ctx.guild.id]:  # Check if the queue is not empty
-                await self.play_song(ctx, self.song_queue[ctx.guild.id][0])
-                self.song_queue[ctx.guild.id].pop(0)
+        self.vc = None
+
+    # searching the item on youtube
+    def search_yt(self, item):
+        with YoutubeDL(self.YDL_OPTIONS) as ydl:
+            try:
+                info = ydl.extract_info("ytsearch:%s" % item, download=False)[
+                    "entries"
+                ][0]
+            except Exception:
+                return False
+        info = ydl.sanitize_info(info)
+        url = info["url"]
+        title = info["title"]
+        return {"title": title, "source": url}
+
+    def play_next(self):
+        if len(self.music_queue) > 0:
+            self.is_playing = True
+
+            # get the first url
+            m_url = self.music_queue[0][0]["source"]
+
+            # remove the first element as you are currently playing it
+            self.music_queue.pop(0)
+
+            self.vc.play(
+                discord.FFmpegPCMAudio(m_url, **self.FFMPEG_OPTIONS),
+                after=lambda e: self.play_next(),
+            )
+        else:
+            self.is_playing = False
+
+    # infinite loop checking
+    async def play_music(self, ctx):
+        if len(self.music_queue) > 0:
+            self.is_playing = True
+
+            m_url = self.music_queue[0][0]["source"]
+
+            # try to connect to voice channel if you are not already connected
+            if self.vc == None or not self.vc.is_connected():
+                self.vc = await self.music_queue[0][1].connect()
+
+                # in case we fail to connect
+                if self.vc == None:
+                    await ctx.send("Could not connect to the voice channel")
+                    return
             else:
-                await ctx.send("The queue is currently empty.")
+                await self.vc.move_to(self.music_queue[0][1])
+
+            # remove the first element as you are currently playing it
+            self.music_queue.pop(0)
+
+            self.vc.play(
+                discord.FFmpegPCMAudio(m_url, **self.FFMPEG_OPTIONS),
+                after=lambda e: self.play_next(),
+            )
+        else:
+            self.is_playing = False
 
     @commands.command(
-        name="leave", help="Clears the song queue and leaves the voice channel"
+        name="play", aliases=["p", "playing"], help="Plays a selected song from youtube"
     )
-    async def leave(self, ctx):
-        self.song_queue[ctx.guild.id] = []
-        await ctx.voice_client.disconnect()
+    async def play(self, ctx, *args):
+        query = " ".join(args)
 
-    @commands.command(name="queue", help="Shows the current song queue")
-    async def queue(self, ctx):
-        if len(self.song_queue[ctx.guild.id]) == 0:
-            await ctx.send("The queue is currently empty.")
+        voice_channel = ctx.author.voice.channel
+        if voice_channel is None:
+            # you need to be connected so that the bot knows where to go
+            await ctx.send("Connect to a voice channel!")
+        elif self.is_paused:
+            self.vc.resume()
         else:
-            queue_str = "\n".join(
-                [song["title"] for song in self.song_queue[ctx.guild.id]]
-            )
-            await ctx.send(f"Current queue:\n{queue_str}")
+            song = self.search_yt(query)
+            self.current = song
+            if type(song) == type(True):
+                await ctx.send(
+                    "Could not download the song. Incorrect format try another keyword. This could be due to playlist or a livestream format."
+                )
+            else:
+                await ctx.send("Song added to the queue")
+                self.music_queue.append([song, voice_channel])
 
-    @commands.command(name="skip", help="Skips the current song being played")
+                if not self.is_playing:
+                    await self.play_music(ctx)
+                    self.is_playing = True
+
+    @commands.command(name="pause", help="Pauses the current song being played")
+    async def pause(self, ctx, *args):
+        if self.is_playing:
+            self.is_playing = False
+            self.is_paused = True
+            self.vc.pause()
+        elif self.is_paused:
+            self.is_paused = False
+            self.is_playing = True
+            self.vc.resume()
+
+    @commands.command(
+        name="resume", aliases=["r"], help="Resumes playing with the discord bot"
+    )
+    async def resume(self, ctx, *args):
+        if self.is_paused:
+            self.vc.resume()
+            self.is_playing = True
+            self.is_paused = False
+
+    @commands.command(
+        name="skip", aliases=["s"], help="Skips the current song being played"
+    )
     async def skip(self, ctx):
-        if ctx.voice_client.is_playing():
-            ctx.voice_client.stop()
-            await self.check_queue(ctx)
+        if self.vc != None and self.vc:
+            self.vc.stop()
+            # try to play next in the queue if it exists
+            await self.play_music(ctx)
+
+    @commands.command(
+        name="queue", aliases=["q"], help="Displays the current songs in queue"
+    )
+    async def queue(self, ctx):
+        retval = ""
+        for i in range(0, len(self.music_queue)):
+            # display a max of 5 songs in the current queue
+            if i > 4:
+                break
+            retval += self.music_queue[i][0]["title"] + "\n"
+
+        if retval != "":
+            await ctx.send(retval)
+        else:
+            await ctx.send("No music in queue")
+
+    @commands.command(
+        name="clear", aliases=["c", "bin"], help="Stops the music and clears the queue"
+    )
+    async def clear(self, ctx):
+        if self.vc != None and self.is_playing:
+            self.vc.stop()
+        self.music_queue = []
+        await ctx.send("Music queue cleared")
+
+    @commands.command(
+        name="leave", aliases=["disconnect", "l", "d"], help="Kick the bot from VC"
+    )
+    async def dc(self, ctx):
+        self.is_playing = False
+        self.is_paused = False
+        await self.vc.disconnect()
+
+    @commands.command(name="current", aliases=["now"], help="Displays the current song")
+    async def current(self, ctx):
+        retval = "Now Playing: " + self.current["title"]
+        if retval != "":
+            await ctx.send(retval)
+        else:
+            await ctx.send("No music in queue")
 
 
 async def setup(bot):
     print("Bot Setup!")
-    await bot.add_cog(Music(bot))
+    await bot.add_cog(music_cog(bot))
