@@ -1,13 +1,9 @@
-from ast import alias
 import discord
 from discord.ext import commands
-
 from yt_dlp import YoutubeDL
 
-import json
 
-
-class music_cog(commands.Cog):
+class MusicCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
@@ -190,5 +186,4 @@ class music_cog(commands.Cog):
 
 
 async def setup(bot):
-    print("Bot Setup!")
-    await bot.add_cog(music_cog(bot))
+    await bot.add_cog(MusicCog(bot))

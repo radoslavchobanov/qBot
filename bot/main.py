@@ -7,18 +7,18 @@ load_dotenv()
 
 # Define intents
 intents = discord.Intents.default()
-intents.messages = True  # If you plan to listen to messages
-intents.guilds = True  # If you need information about guilds (servers)
-intents.message_content = True  # Enable privileged message content intent
+intents.messages = True
+intents.guilds = True
+intents.message_content = True
 intents.all()
 
-bot = commands.Bot(command_prefix=config.BOT_PREFIX, intents=intents)
+bot = commands.Bot(command_prefix=config.BOT_PREFIX, intents=intents, help_command=None)
 
 
 @bot.event
 async def on_ready():
-    print(f"{bot.user.name} has connected to Discord!")
     await bot.load_extension("music_cog")
+    await bot.load_extension("crypto_cog")
 
 
 bot.run(config.DISCORD_TOKEN)
